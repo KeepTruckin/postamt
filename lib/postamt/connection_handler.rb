@@ -46,6 +46,9 @@ module Postamt
     # active or defined connection: if it is the latter, it will be
     # opened and set as the active connection for the class it was defined
     # for (not necessarily the current class).
+
+    # The connection handler now uses the connection_specification_name to retrieve connections instead the model object
+    # https://github.com/rails/rails/blob/v5.0.7.2/activerecord/lib/active_record/connection_handling.rb#L128
     def retrieve_connection(klass) #:nodoc:
       self.ensure_ready
       pool = self.retrieve_connection_pool(klass)
@@ -96,12 +99,14 @@ module Postamt
       Postamt.force_connection || Postamt.connection_stack.last || Postamt.overwritten_default_connections[klass.name] || klass.default_connection || Postamt.default_connection
     end
 
-    def pool_for(klass)
+    def pool_for(connection_specification_name)
       # Sauspiel's reportable dependency makes Rails 3.2 request a connection early,
       # before the App is initialized. Return nil in that case, Rails deals with that
       return nil if ActiveRecord::Base.configurations[Rails.env].nil?
 
-      connection = connection_for(klass)
+      # https://github.com/rails/rails/blob/v5.0.7.2/activerecord/lib/active_record/connection_handling.rb#L128
+      connection = (['', 'primary'].include?(connection_specification_name.to_s) ? :master : connection_specification_name.to_sym)
+
       # Ideally we would use #fetch here, as class_to_pool[klass] may sometimes be nil.
       # However, benchmarking (https://gist.github.com/jonleighton/3552829) showed that
       # #fetch is significantly slower than #[]. So in the nil case, no caching will
@@ -110,18 +115,8 @@ module Postamt
       @pools[connection] ||= begin
         Postamt.configurations[connection.to_s] ||= Postamt.configurations['master']
 
-        spec = if Rails::VERSION::MAJOR == 4 and Rails::VERSION::MINOR <= 2
-          resolver = ActiveRecord::ConnectionAdapters::ConnectionSpecification::Resolver.new Postamt.configurations
-          resolver.spec(connection)
-        elsif Rails::VERSION::MAJOR == 4 and Rails::VERSION::MINOR == 0
-          resolver = ActiveRecord::ConnectionAdapters::ConnectionSpecification::Resolver.new connection, Postamt.configurations
-          resolver.spec
-        elsif Rails::VERSION::MAJOR == 3 and Rails::VERSION::MINOR == 2
-          resolver = ActiveRecord::ConnectionAdapters::ConnectionSpecification::Resolver.new connection, Postamt.configurations
-          resolver.spec
-        else
-          abort "Postamt doesn't support Rails version #{Rails.version}"
-        end
+        resolver = ActiveRecord::ConnectionAdapters::ConnectionSpecification::Resolver.new Postamt.configurations
+        spec = resolver.spec(connection)
 
         unless ActiveRecord::Base.respond_to?(spec.adapter_method)
           raise ActiveRecord::AdapterNotFound, "database configuration specifies nonexistent #{spec.config[:adapter]} adapter"

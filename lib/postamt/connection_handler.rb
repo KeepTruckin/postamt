@@ -105,7 +105,10 @@ module Postamt
       return nil if ActiveRecord::Base.configurations[Rails.env].nil?
 
       # https://github.com/rails/rails/blob/v5.0.7.2/activerecord/lib/active_record/connection_handling.rb#L128
-      connection = (['', 'primary'].include?(connection_specification_name.to_s) ? :master : connection_specification_name.to_sym)
+      # since now instead of a class the connection name is passed we'd use Postamt.connection_stack to fetch the connection
+      # we set this value in Postamt.on method which we call inside the on_any_replica method
+      connection = Postamt.connection_stack.last
+      connection ||= (['', 'primary'].include?(connection_specification_name.to_s) ? :master : connection_specification_name.to_sym)
 
       # Ideally we would use #fetch here, as class_to_pool[klass] may sometimes be nil.
       # However, benchmarking (https://gist.github.com/jonleighton/3552829) showed that

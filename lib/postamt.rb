@@ -13,6 +13,8 @@ module Postamt
   self.transaction_connection = :master
   self.force_connection = nil
 
+  VARIABLES_KEY = 'variables'
+
   def self.on(connection)
     self.connection_stack << connection
     begin
@@ -27,7 +29,11 @@ module Postamt
       input = ActiveRecord::Base.configurations[Rails.env]
       configs = input.select { |k, v| v.is_a? Hash }
       master_config = input.reject { |k, v| v.is_a? Hash }
+      variables = configs.key?(VARIABLES_KEY) ? configs.delete(VARIABLES_KEY) : nil
       configs.each { |k, v| v.reverse_merge!(master_config) }
+      if ENV['DB_SET_VARIABLES'].present? && ENV['DB_SET_VARIABLES'] == 'true' && !variables.nil?()
+        master_config[VARIABLES_KEY] = variables
+      end
       configs['master'] = master_config
       configs
     end
